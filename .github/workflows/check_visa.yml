@@ -2,8 +2,9 @@ name: CEAC Visa Status Check
 
 on:
   schedule:
+    # Every 15 min, Mon-Fri, 2:00–11:30 UTC (7:30 AM – 5:00 PM IST)
     - cron: "*/15 2-11 * * 1-5"
-  workflow_dispatch:
+  workflow_dispatch:          # Manual trigger button
 
 jobs:
   check:
@@ -18,16 +19,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Install ChromeDriver
-        uses: nanasess/setup-chromedriver@v2
-
-      - name: Install Python dependencies
-        run: pip install selenium requests 2captcha-python
+      - name: Install Chrome & dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq chromium-browser chromium-chromedriver
+          pip install selenium requests 2captcha-python
 
       - name: Restore last status
         uses: actions/cache@v4
@@ -45,8 +41,6 @@ jobs:
           CEAC_SURNAME: ${{ secrets.CEAC_SURNAME }}
           TWO_CAPTCHA_API_KEY: ${{ secrets.TWO_CAPTCHA_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          CHROME_BIN: /usr/bin/google-chrome
-          CHROMEDRIVER_BIN: /usr/bin/chromedriver
         run: python check_status.py
 
       - name: Save status for next run
