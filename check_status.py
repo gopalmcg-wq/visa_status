@@ -58,15 +58,38 @@ def create_driver() -> webdriver.Chrome:
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=1280,900")
+    opts.add_argument("--remote-debugging-port=9222")
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     )
-    # GitHub Actions has Chrome pre-installed
-    opts.binary_location = os.getenv("CHROME_BIN", "/usr/bin/google-chrome")
-    service = Service(os.getenv("CHROMEDRIVER_BIN", "/usr/bin/chromedriver"))
-    return webdriver.Chrome(service=service, options=opts)
+    # Try multiple Chrome paths (varies by environment)
+    for chrome_path in [
+        os.getenv("CHROME_BIN", ""),
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+    ]:
+        if chrome_path and os.path.exists(chrome_path):
+            opts.binary_location = chrome_path
+            log.info(f"Using Chrome at: {chrome_path}")
+            break
+
+    for driver_path in [
+        os.getenv("CHROMEDRIVER_BIN", ""),
+        "/usr/bin/chromedriver",
+        "/usr/lib/chromium-browser/chromedriver",
+    ]:
+        if driver_path and os.path.exists(driver_path):
+            log.info(f"Using ChromeDriver at: {driver_path}")
+            service = Service(driver_path)
+            return webdriver.Chrome(service=service, options=opts)
+
+    # Fallback: let selenium find it
+    log.info("Using default ChromeDriver lookup")
+    return webdriver.Chrome(options=opts)
 
 
 def solve_captcha(driver) -> bool:
@@ -128,7 +151,9 @@ def check_status() -> str | None:
     driver = None
     try:
         driver = create_driver()
+        log.info("Chrome launched successfully")
         driver.get(CEAC_URL)
+        log.info(f"Page loaded: {driver.title}")
         wait = WebDriverWait(driver, 20)
 
         # Visa type
@@ -142,10 +167,22 @@ def check_status() -> str | None:
         dd = wait.until(EC.presence_of_element_located(
             (By.ID, "ctl00_ContentPlaceHolder1_Location_DropDownList")))
         sel = Select(dd)
+
+        # Log all options so we can see exact format
+        log.info(f"Dropdown has {len(sel.options)} options. Listing all:")
+        for i, opt in enumerate(sel.options):
+            log.info(f"  [{i}] '{opt.text}'")
+
+        matched = False
         for opt in sel.options:
             if LOCATION.upper() in opt.text.upper():
                 sel.select_by_visible_text(opt.text)
+                log.info(f"✅ Matched location: '{opt.text}'")
+                matched = True
                 break
+        if not matched:
+            log.error(f"❌ Could not match '{LOCATION}' in any dropdown option")
+            return None
         time.sleep(1)
 
         # Case number
