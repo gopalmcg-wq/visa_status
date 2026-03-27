@@ -1,0 +1,186 @@
+"""
+CEAC Dry Run — Terminal version for GitHub Codespaces.
+Fills the form, dumps all fields, saves a screenshot as PNG.
+"""
+
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+
+CASE_NUMBER = "AA00EVHY33"
+VISA_TYPE = "NIV"
+LOCATION = "CHENNAI"
+PASSPORT_NUMBER = "U0497789"
+SURNAME = "BAWAS"
+
+CEAC_URL = "https://ceac.state.gov/ceacstattracker/status.aspx"
+
+
+def main():
+    print("🚀 Launching headless Chrome...")
+    opts = Options()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1280,900")
+    opts.binary_location = "/usr/bin/chromium-browser"
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=opts)
+
+    results = {}
+
+    try:
+        driver.get(CEAC_URL)
+        wait = WebDriverWait(driver, 20)
+        print("✅ Page loaded")
+        driver.save_screenshot("step0_loaded.png")
+
+        # 1. Select NIV
+        radio_id = "ctl00_ContentPlaceHolder1_Visa_Application_Type_rbl_0"
+        wait.until(EC.element_to_be_clickable((By.ID, radio_id))).click()
+        results["visa_type"] = "✅ NIV selected"
+        print(results["visa_type"])
+        time.sleep(2)
+        driver.save_screenshot("step1_niv.png")
+
+        # 2. Location
+        dropdown = wait.until(
+            EC.presence_of_element_located(
+                (By.ID, "ctl00_ContentPlaceHolder1_Location_DropDownList")
+            )
+        )
+        select = Select(dropdown)
+        matched = False
+        for option in select.options:
+            if LOCATION.upper() in option.text.upper():
+                select.select_by_visible_text(option.text)
+                results["location"] = f"✅ {option.text}"
+                print(results["location"])
+                matched = True
+                break
+        if not matched:
+            results["location"] = f"❌ '{LOCATION}' not found"
+            print(results["location"])
+            print("Available locations:")
+            for opt in select.options:
+                print(f"   - {opt.text}")
+        time.sleep(2)
+        driver.save_screenshot("step2_location.png")
+
+        # 3. Case number
+        case_input = wait.until(
+            EC.presence_of_element_located(
+                (By.ID, "ctl00_ContentPlaceHolder1_Ession_Case_Number")
+            )
+        )
+        case_input.clear()
+        case_input.send_keys(CASE_NUMBER)
+        results["case_number"] = f"✅ {CASE_NUMBER}"
+        print(f"✅ Case number entered: {CASE_NUMBER}")
+
+        # 4. Passport
+        try:
+            pi = driver.find_element(
+                By.CSS_SELECTOR,
+                "input[id*='Passport'], input[id*='passport'], input[name*='Passport']"
+            )
+            pi.clear()
+            pi.send_keys(PASSPORT_NUMBER)
+            results["passport"] = f"✅ {PASSPORT_NUMBER}"
+            print(f"✅ Passport entered")
+        except Exception:
+            results["passport"] = "⚠️  Field not found"
+            print("⚠️  Passport field not found")
+
+        # 5. Surname
+        try:
+            si = driver.find_element(
+                By.CSS_SELECTOR,
+                "input[id*='Surname'], input[id*='surname'], input[id*='Last']"
+            )
+            si.clear()
+            si.send_keys(SURNAME)
+            results["surname"] = f"✅ {SURNAME}"
+            print(f"✅ Surname entered")
+        except Exception:
+            results["surname"] = "⚠️  Field not found"
+            print("⚠️  Surname field not found")
+
+        driver.save_screenshot("step3_filled.png")
+
+        # 6. Dump ALL visible form fields
+        print("\n" + "=" * 65)
+        print("ALL VISIBLE FORM FIELDS")
+        print("=" * 65)
+        inputs = driver.find_elements(
+            By.CSS_SELECTOR, "input:not([type='hidden']), select, textarea"
+        )
+        for el in inputs:
+            el_id = el.get_attribute("id") or "(no id)"
+            el_type = el.get_attribute("type") or el.tag_name
+            el_val = el.get_attribute("value") or ""
+            el_name = el.get_attribute("name") or ""
+            print(f"  [{el_type:10}] id={el_id}")
+            print(f"              name={el_name}  value='{el_val}'")
+        print("=" * 65)
+
+        # 7. CAPTCHA detection
+        print("\nCAPTCHA DETECTION:")
+        recaptcha = driver.find_elements(By.CSS_SELECTOR, 'iframe[src*="recaptcha"]')
+        img_captcha = driver.find_elements(
+            By.CSS_SELECTOR, "img[id*='captcha' i], img[id*='Captcha' i]"
+        )
+        if recaptcha:
+            results["captcha"] = "reCAPTCHA v2"
+            print("🔒 reCAPTCHA v2 detected")
+            # Get sitekey for 2captcha setup later
+            div = driver.find_elements(By.CSS_SELECTOR, '.g-recaptcha')
+            if div:
+                sk = div[0].get_attribute("data-sitekey")
+                print(f"   Sitekey: {sk}")
+        elif img_captcha:
+            results["captcha"] = "Image CAPTCHA"
+            print("🔒 Image CAPTCHA detected")
+            img_captcha[0].screenshot("captcha_image.png")
+            print("   Saved captcha_image.png")
+        else:
+            results["captcha"] = "None found (may appear after submit)"
+            print("🤷 No CAPTCHA found yet (may appear after clicking submit)")
+
+        driver.save_screenshot("step4_final.png")
+
+        # 8. Summary
+        print("\n" + "=" * 55)
+        print("📋 DRY RUN SUMMARY")
+        print("=" * 55)
+        print(f"  Visa Type:    {results.get('visa_type', '?')}")
+        print(f"  Location:     {results.get('location', '?')}")
+        print(f"  Case Number:  {results.get('case_number', '?')}")
+        print(f"  Passport:     {results.get('passport', '?')}")
+        print(f"  Surname:      {results.get('surname', '?')}")
+        print(f"  CAPTCHA:      {results.get('captcha', '?')}")
+        print("=" * 55)
+        print("\nScreenshots saved: step0-4 + captcha_image.png")
+        print("Check them in the file explorer on the left. 👈")
+        if all("✅" in str(v) for k, v in results.items() if k != "captcha"):
+            print("\n🎉 ALL FIELDS FILLED SUCCESSFULLY — ready for production!")
+        else:
+            print("\n⚠️  Some fields missing — check the field dump above")
+            print("   Copy the field IDs and share them here, I'll fix the selectors.")
+
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        driver.save_screenshot("error.png")
+        raise
+
+    finally:
+        driver.quit()
+        print("\nBrowser closed.")
+
+
+main()
