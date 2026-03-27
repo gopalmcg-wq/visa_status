@@ -2,9 +2,8 @@ name: CEAC Visa Status Check
 
 on:
   schedule:
-    # Every 15 min, Mon-Fri, 2:00–11:30 UTC (7:30 AM – 5:00 PM IST)
     - cron: "*/15 2-11 * * 1-5"
-  workflow_dispatch:          # Manual trigger button
+  workflow_dispatch:
 
 jobs:
   check:
@@ -19,11 +18,31 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Chrome & dependencies
+      - name: Install Chrome
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq chromium-browser chromium-chromedriver
-          pip install selenium requests 2captcha-python
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -fy install
+          google-chrome --version
+          which google-chrome
+
+      - name: Install ChromeDriver
+        run: |
+          CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+')
+          echo "Chrome version: $CHROME_VERSION"
+          DRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}.0/linux64/chromedriver-linux64.zip"
+          wget -q "$DRIVER_URL" -O chromedriver.zip || true
+          if [ ! -f chromedriver.zip ] || [ ! -s chromedriver.zip ]; then
+            pip install chromedriver-autoinstaller
+            python -c "import chromedriver_autoinstaller; chromedriver_autoinstaller.install()"
+          else
+            unzip -o chromedriver.zip
+            sudo mv chromedriver-linux64/chromedriver /usr/bin/chromedriver
+            sudo chmod +x /usr/bin/chromedriver
+          fi
+          chromedriver --version
+
+      - name: Install Python dependencies
+        run: pip install selenium requests 2captcha-python chromedriver-autoinstaller
 
       - name: Restore last status
         uses: actions/cache@v4
